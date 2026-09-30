@@ -27,7 +27,7 @@ class Database:
                                                    ('grace', '10');
         """)
         self.db.commit()
-      
+
     # ---------------- work shift (start, end, grace minutes) ----------------
     def shift(self):
         s = dict(self.db.execute("SELECT key, value FROM settings").fetchall())
@@ -70,7 +70,7 @@ class Database:
         # keeps the attendance history, but the tag and PIN stop working
         self.db.execute("UPDATE users SET active=0, uid=NULL, pin=NULL WHERE id=?", (user_id,))
         self.db.commit()
-      
+
     # ---------------- attendance rules ----------------
     def decide(self, user, now, forced=None):
         """Returns (accepted, event, status). Status is ON_TIME / LATE / OK / EARLY_OUT,
@@ -102,7 +102,7 @@ class Database:
                         (user_id, now.strftime("%Y-%m-%d %H:%M:%S"), event, status,
                          method, credential))
         self.db.commit()
-      
+
     # ---------------- dashboard counters ----------------
     def summary(self, now):
         today = now.strftime("%Y-%m-%d")
