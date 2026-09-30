@@ -7,19 +7,22 @@ import time
 
 import spidev
 from gpiozero import Buzzer, DigitalInputDevice, DigitalOutputDevice, DistanceSensor, RGBLED
-from smbus2 import SMBus
+try:
+    from smbus2 import SMBus
+except ImportError:
+    from smbus import SMBus        # older name, already installed on Raspberry Pi OS
 
 # ---------------- pin map (BCM GPIO numbers) ----------------
-RFID_RST = 25
-LCD_ADDRESS = 0x27
-KEY_ROWS = (5, 6, 13, 19)
-KEY_COLS = (12, 16, 20, 21)        
+RFID_RST = 25                      # RC522 uses SPI0: GPIO8, 9, 10, 11
+LCD_ADDRESS = 0x27                 # change to 0x3F if i2cdetect shows 3f
+KEY_ROWS = (5, 6, 13, 19)          # keypad rows (through 470 Ohm resistors)
+KEY_COLS = (12, 16, 20, 21)        # keypad columns
 KEYS = ("123A", "456B", "789C", "*0#D")
-TRIG, ECHO = 23, 24
-BUZZER = 17
+TRIG, ECHO = 23, 24                # ECHO goes through the 1k / 2k voltage divider!
+BUZZER = 17                        # through the NPN transistor
 LED_R, LED_G, LED_B = 22, 27, 18
-COMMON_ANODE_LED = False
-NEAR_CM, FAR_CM = 60, 80
+COMMON_ANODE_LED = False           # True if the LED's long leg goes to 3.3 V
+NEAR_CM, FAR_CM = 60, 80           # wake when closer than 60 cm, absent when farther than 80 cm
 
 
 class RC522:
@@ -75,7 +78,7 @@ class RC522:
     def close(self):
         self.spi.close()
         self.rst.close()
-        
+
 
 class LCD:
     """16x2 LCD with a PCF8574 I2C backpack (4-bit mode)."""
@@ -107,7 +110,32 @@ class LCD:
     def backlight(self, on):
         self.light = 0x08 if on else 0
         self.bus.write_byte(self.address, self.light)
-        
+
+
+class Keypad:
+    """4x4 matrix: pull one row LOW at a time and see which column goes LOW."""
+
+    def __init__(self):
+        self.rows = [DigitalOutputDevice(p, initial_value=True) for p in KEY_ROWS]
+        self.cols = [DigitalInputDevice(p, pull_up=True) for p in KEY_COLS]
+        self.last = None
+
+    def get_key(self):
+        pressed = None
+        for r, row in enumerate(self.rows):
+            row.off()
+            for c, col in enumerate(self.cols):
+                if col.is_active:                       # active = LOW = pressed
+                    pressed = KEYS[r][c]
+            row.on()
+        new = pressed if pressed != self.last else None # report each press once
+        self.last = pressed
+        return new
+
+    def close(self):
+        for pin in self.rows + self.cols:
+            pin.close()
+
 
 class InputThread(threading.Thread):
     """Background thread: polls keypad (20 ms), RFID and distance (100 ms).
@@ -150,7 +178,7 @@ class InputThread(threading.Thread):
                         device.close()
                 rfid = keypad = sensor = None
                 time.sleep(3)                           # then try again
-        
+
 
 class OutputThread(threading.Thread):
     """Background thread: runs LCD / LED / buzzer commands from a queue,
@@ -189,7 +217,7 @@ class OutputThread(threading.Thread):
                 buzzer.on(); time.sleep(0.8); buzzer.off()
             elif beep == "click":
                 buzzer.on(); time.sleep(0.02); buzzer.off()
-                
+
 
 # ---------------- module tests: python3 hardware.py <part> ----------------
 if __name__ == "__main__":
